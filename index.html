@@ -110,7 +110,8 @@ function App(){
   const[payments,setPayments]=useState({});
   const[expenses,setExpenses]=useState([]);
   const[tab,setTab]=useState('main');
-  const[selMonth,setSelMonth]=useState(nowKey());
+  const effectiveNow=nowKey()>=START_MONTH?nowKey():START_MONTH;
+  const[selMonth,setSelMonth]=useState(effectiveNow);
 
   useEffect(()=>{
     let loaded={m:false,p:false,e:false};
@@ -131,7 +132,7 @@ function App(){
   );
 
   const activeMembers=members.filter(m=>m.active!==false);
-  const allMonths=monthsBetween(START_MONTH,nowKey());
+  const allMonths=monthsBetween(START_MONTH,effectiveNow);
 
   // summary
   const totalReceived=Object.entries(payments).flatMap(([,mp])=>Object.values(mp||{})).filter(p=>p&&p.paid).reduce((s,p)=>s+Number(p.amount||0),0);
