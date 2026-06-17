@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>קרן השיעורים</title>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icon.svg"/>
+<meta name="theme-color" content="#5b21b6"/>
+<script>
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+</script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f5f3ff;font-family:'Segoe UI',Arial,sans-serif;direction:rtl;color:#1e1b4b}
+input,select,textarea,button{font-family:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script>
+const firebaseConfig={
+  apiKey:"AIzaSyCtTCUNeYzRMlSLe2VJs_ols818QI1ZuTA",
+  authDomain:"sarikow-3342b.firebaseapp.com",
+  databaseURL:"https://sarikow-3342b-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"sarikow-3342b",
+  storageBucket:"sarikow-3342b.firebasestorage.app",
+  messagingSenderId:"95850039076",
+  appId:"1:95850039076:web:4149b5724c52fbdaa315b1"
+};
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+</script>
+<script type="text/babel">
+const{useState,useEffect,useRef}=React;
+
+// ── CONSTANTS ────────────────────────────────────────────────
+const START_MONTH='2026-06'; // תמוז תשפ"ו
+const FB_PATH='keren-hashiurim';
+
+const fmt=n=>Number(n||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0});
+
+const toHebMonth=yyyymm=>{
+  const[y,m]=yyyymm.split('-').map(Number);
+  const d=new Date(y,m-1,15);
+  try{return new Intl.DateTimeFormat('he-u-ca-hebrew',{month:'long',year:'numeric'}).format(d);}
+  catch{return yyyymm;}
+};
+
+const nowKey=()=>{const n=new Date();return`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;};
+
+const monthsBetween=(from,to)=>{
+  const res=[];
+  let[fy,fm]=from.split('-').map(Number);
+  const[ty,tm]=to.split('-').map(Number);
+  while(fy<ty||(fy===ty&&fm<=tm)){
+    res.push(`${fy}-${String(fm).padStart(2,'0')}`);
+    fm++;if(fm>12){fm=1;fy++;}
+  }
+  return res;
+};
+
+const prevMonth=k=>{let[y,m]=k.split('-').map(Number);m--;if(m<1){m=12;y--;}return`${y}-${String(m).padStart(2,'0')}`;};
+const nextMonth=k=>{let[y,m]=k.split('-').map(Number);m++;if(m>12){m=1;y++;}return`${y}-${String(m).padStart(2,'0')}`;};
+
+// ── FIREBASE HELPERS ─────────────────────────────────────────
+function fbSet(path,val){db.ref(`${FB_PATH}/${path}`).set(val);}
+function fbListen(path,cb){
+  const ref=db.ref(`${FB_PATH}/${path}`);
+  ref.on('value',s=>cb(s.val()));
+  return()=>ref.off('value');
+}
+
+// ── STYLES ───────────────────────────────────────────────────
+const card={background:'#fff',borderRadius:14,padding:'14px 16px',boxShadow:'0 2px 10px rgba(91,33,182,0.08)',marginBottom:12};
+const inp={border:'1.5px solid #ddd6fe',borderRadius:9,padding:'9px 12px',fontSize:14,width:'100%',outline:'none'};
+const btn=(bg,col='#fff')=>({padding:'9px 18px',background:bg,color:col,border:'none',borderRadius:9,fontWeight:700,cursor:'pointer',fontSize:13});
+const chip=(bg,col)=>({display:'inline-block',background:bg,color:col,borderRadius:20,padding:'3px 12px',fontSize:12,fontWeight:700});
+
+// ── WHATSAPP MESSAGE ─────────────────────────────────────────
+function buildWAMsg(member,unpaidMonths){
+  const monthsList=unpaidMonths.map(m=>`• ${toHebMonth(m)}`).join('\n');
+  const total=unpaidMonths.length*(member.amount||50);
+  return `בס"ד\nשלום ${member.name}!\nיהי רצון שתצליח בכל עניניך ותזכה לעלות בתורה מעלה מעלה! 🌟\n\nתזכורת לתשלום קרן השיעורים 📚\n\nחודשים שטרם שולמו:\n${monthsList}\n\nסה"כ חוב: ${fmt(total)} ₪\n\nתודה רבה! 🙏`;
+}
+
+// ── MODAL ────────────────────────────────────────────────────
+function Modal({title,onClose,children}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px',borderBottom:'1px solid #ede9fe'}}>
+          <h2 style={{fontSize:17,color:'#3b0764',fontWeight:800}}>{title}</h2>
+          <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#7c3aed'}}>×</button>
+        </div>
+        <div style={{padding:'16px 20px'}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN APP ─────────────────────────────────────────────────
+function App(){
+  const[ready,setReady]=useState(false);
+  const[members,setMembers]=useState([]);
+  const[payments,setPayments]=useState({});
+  const[expenses,setExpenses]=useState([]);
+  const[tab,setTab]=useState('main');
+  const[selMonth,setSelMonth]=useState(nowKey());
+
+  useEffect(()=>{
+    let loaded={m:false,p:false,e:false};
+    const check=()=>{if(loaded.m&&loaded.p&&loaded.e)setReady(true);};
+    const u1=fbListen('members',v=>{setMembers(Array.isArray(v)?v:v?Object.values(v):[]);loaded.m=true;check();});
+    const u2=fbListen('payments',v=>{setPayments(v||{});loaded.p=true;check();});
+    const u3=fbListen('expenses',v=>{setExpenses(Array.isArray(v)?v:v?Object.values(v):[]);loaded.e=true;check();});
+    return()=>{u1();u2();u3();};
+  },[]);
+
+  if(!ready)return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:16,background:'#f5f3ff'}}>
+      <img src="icon.svg" width={64} height={64} alt=""/>
+      <div style={{fontSize:22,fontWeight:800,color:'#5b21b6'}}>קרן השיעורים</div>
+      <div style={{fontSize:13,color:'#7c3aed',opacity:.7}}>מתחבר לענן...</div>
+      <div style={{width:36,height:36,border:'4px solid #ddd6fe',borderTop:'4px solid #5b21b6',borderRadius:'50%',animation:'spin .8s linear infinite'}}/>
+    </div>
+  );
+
+  const activeMembers=members.filter(m=>m.active!==false);
+  const allMonths=monthsBetween(START_MONTH,nowKey());
+
+  // summary
+  const totalReceived=Object.entries(payments).flatMap(([,mp])=>Object.values(mp||{})).filter(p=>p&&p.paid).reduce((s,p)=>s+Number(p.amount||0),0);
+  const totalDebt=activeMembers.reduce((s,mem)=>{
+    const unpaid=allMonths.filter(mo=>mo<=nowKey()&&!(payments[mo]?.[mem.id]?.paid));
+    return s+unpaid.length*(mem.amount||50);
+  },0);
+  const totalExpenses=expenses.reduce((s,e)=>s+Number(e.amount||0),0);
+  const balance=totalReceived-totalExpenses;
+
+  const tabS=t=>({padding:'8px 14px',borderRadius:10,border:'none',cursor:'pointer',fontWeight:700,fontSize:13,
+    background:tab===t?'#5b21b6':'#ede9fe',color:tab===t?'#fff':'#5b21b6'});
+
+  return(
+    <div style={{minHeight:'100vh',background:'#f5f3ff'}}>
+      {/* Header */}
+      <div style={{background:'linear-gradient(135deg,#3b0764,#5b21b6)',padding:'14px 16px',position:'sticky',top:0,zIndex:50,boxShadow:'0 2px 12px rgba(0,0,0,0.2)'}}>
+        <div style={{maxWidth:600,margin:'0 auto'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+            <img src="icon.svg" width={32} height={32} alt=""/>
+            <div style={{color:'#fde68a',fontWeight:800,fontSize:18}}>קרן השיעורים</div>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {[['main','📅 חודשי'],['members','👥 חברים'],['expenses','💸 הוצאות'],['summary','📊 סיכום']].map(([k,l])=>(
+              <button key={k} style={tabS(k)} onClick={()=>setTab(k)}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:600,margin:'0 auto',padding:'14px 12px'}}>
+        {tab==='main'&&<MainTab members={activeMembers} payments={payments} selMonth={selMonth} setSelMonth={setSelMonth} allMonths={allMonths} nowKey={nowKey()}/>}
+        {tab==='members'&&<MembersTab members={members} setMembers={setMembers}/>}
+        {tab==='expenses'&&<ExpensesTab expenses={expenses} setExpenses={setExpenses}/>}
+        {tab==='summary'&&<SummaryTab totalReceived={totalReceived} totalDebt={totalDebt} totalExpenses={totalExpenses} balance={balance} members={activeMembers} payments={payments} allMonths={allMonths} nowKey={nowKey()}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN TAB ─────────────────────────────────────────────────
+function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
+  const[payModal,setPayModal]=useState(null);
+  const[payAmount,setPayAmount]=useState('');
+
+  const canNext=selMonth<nowKey;
+  const canPrev=selMonth>START_MONTH;
+
+  const monthPay=payments[selMonth]||{};
+
+  const togglePaid=(mem)=>{
+    const cur=monthPay[mem.id];
+    if(cur?.paid){
+      fbSet(`payments/${selMonth}/${mem.id}`,{paid:false});
+    } else {
+      setPayAmount(String(mem.amount||50));
+      setPayModal(mem);
+    }
+  };
+
+  const savePay=()=>{
+    if(!payAmount||isNaN(payAmount))return;
+    const today=new Date().toISOString().slice(0,10);
+    fbSet(`payments/${selMonth}/${payModal.id}`,{paid:true,amount:Number(payAmount),paidDate:today});
+    setPayModal(null);
+  };
+
+  const getUnpaid=(mem)=>allMonths.filter(mo=>mo<=nowKey&&!(payments[mo]?.[mem.id]?.paid));
+  const getDebt=(mem)=>getUnpaid(mem).length*(mem.amount||50);
+
+  const paidCount=members.filter(m=>monthPay[m.id]?.paid).length;
+
+  return(
+    <div>
+      {/* Month nav */}
+      <div style={{...card,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px'}}>
+        <button onClick={()=>canPrev&&setSelMonth(prevMonth(selMonth))}
+          style={{...btn(canPrev?'#5b21b6':'#e5e7eb',canPrev?'#fff':'#aaa'),padding:'7px 14px'}}>→</button>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontWeight:800,fontSize:17,color:'#3b0764'}}>{toHebMonth(selMonth)}</div>
+          <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>{paidCount}/{members.length} שילמו</div>
+        </div>
+        <button onClick={()=>canNext&&setSelMonth(nextMonth(selMonth))}
+          style={{...btn(canNext?'#5b21b6':'#e5e7eb',canNext?'#fff':'#aaa'),padding:'7px 14px'}}>←</button>
+      </div>
+
+      {/* Members */}
+      {members.length===0&&<div style={{...card,textAlign:'center',color:'#7c3aed',padding:30}}>אין חברים פעילים — הוסף בלשונית "חברים"</div>}
+      {members.map(mem=>{
+        const paid=monthPay[mem.id]?.paid;
+        const debt=getDebt(mem);
+        const unpaidList=getUnpaid(mem);
+        const waMsg=buildWAMsg(mem,unpaidList);
+        const phone=mem.phone?.replace(/\D/g,'');
+        const waUrl=phone?`https://wa.me/972${phone.replace(/^0/,'')}?text=${encodeURIComponent(waMsg)}`:`https://wa.me/?text=${encodeURIComponent(waMsg)}`;
+
+        return(
+          <div key={mem.id} style={{...card,borderRight:`5px solid ${paid?'#16a34a':'#dc2626'}`}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>{mem.name}</div>
+                <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>
+                  {mem.amount||50} ₪/חודש
+                  {!paid&&debt>0&&<span style={{color:'#dc2626',fontWeight:700,marginRight:8}}>· חוב כולל: {fmt(debt)} ₪ ({unpaidList.length} חודשים)</span>}
+                  {paid&&<span style={{color:'#16a34a',fontWeight:700,marginRight:8}}>· שולם {fmt(monthPay[mem.id].amount)} ₪</span>}
+                </div>
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
+                {!paid&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
+                <button onClick={()=>togglePaid(mem)}
+                  style={btn(paid?'#fee2e2':'#dcfce7',paid?'#dc2626':'#16a34a')}>
+                  {paid?'✕ בטל':'✓ שילם'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Pay modal */}
+      {payModal&&(
+        <Modal title={`סמן תשלום — ${payModal.name}`} onClose={()=>setPayModal(null)}>
+          <div style={{marginBottom:10,color:'#5b21b6',fontSize:14}}>חודש: {toHebMonth(selMonth)}</div>
+          <label style={{fontSize:13,color:'#6b7280',display:'block',marginBottom:6}}>סכום ששולם (₪)</label>
+          <input style={inp} type="number" value={payAmount} onChange={e=>setPayAmount(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&savePay()}/>
+          <div style={{display:'flex',gap:10,marginTop:14}}>
+            <button style={{...btn('#5b21b6'),flex:1}} onClick={savePay}>✓ אשר תשלום</button>
+            <button style={{...btn('#f3f4f6','#374151'),flex:1}} onClick={()=>setPayModal(null)}>ביטול</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── MEMBERS TAB ───────────────────────────────────────────────
+function MembersTab({members,setMembers}){
+  const empty={name:'',phone:'',amount:50,active:true};
+  const[form,setForm]=useState(empty);
+  const[editing,setEditing]=useState(null);
+  const[showForm,setShowForm]=useState(false);
+
+  const saveM=()=>{
+    if(!form.name.trim())return alert('יש להזין שם');
+    const list=[...members];
+    if(editing!=null){
+      list[editing]={...list[editing],...form};
+    } else {
+      const maxId=members.reduce((m,x)=>Math.max(m,x.id||0),0);
+      list.push({...form,id:maxId+1});
+    }
+    fbSet('members',list);
+    setForm(empty);setEditing(null);setShowForm(false);
+  };
+
+  const toggleActive=(i)=>{
+    const list=[...members];
+    list[i]={...list[i],active:!list[i].active};
+    fbSet('members',list);
+  };
+
+  const openEdit=(i)=>{setForm(members[i]);setEditing(i);setShowForm(true);};
+
+  return(
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{fontWeight:800,fontSize:16,color:'#3b0764'}}>חברי הקרן ({members.filter(m=>m.active!==false).length} פעילים)</div>
+        <button style={btn('#5b21b6')} onClick={()=>{setForm(empty);setEditing(null);setShowForm(true);}}>+ הוסף חבר</button>
+      </div>
+
+      {members.map((m,i)=>(
+        <div key={m.id||i} style={{...card,opacity:m.active===false?.55:1,borderRight:`4px solid ${m.active===false?'#d1d5db':'#5b21b6'}`}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>{m.name}
+                {m.active===false&&<span style={{...chip('#f3f4f6','#6b7280'),marginRight:8,fontSize:11}}>לא פעיל</span>}
+              </div>
+              <div style={{fontSize:12,color:'#7c3aed',marginTop:3}}>
+                {m.phone||'ללא טלפון'} · {m.amount||50} ₪/חודש
+              </div>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button style={btn('#ede9fe','#5b21b6')} onClick={()=>openEdit(i)}>✏️</button>
+              <button style={btn(m.active===false?'#dcfce7':'#fee2e2',m.active===false?'#16a34a':'#dc2626')}
+                onClick={()=>toggleActive(i)}>
+                {m.active===false?'הפעל':'הפסק'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {showForm&&(
+        <Modal title={editing!=null?'עריכת חבר':'הוסף חבר חדש'} onClose={()=>setShowForm(false)}>
+          {[['name','שם מלא *','text'],['phone','מספר טלפון','tel'],['amount','סכום חודשי (₪)','number']].map(([f,l,t])=>(
+            <div key={f} style={{marginBottom:12}}>
+              <label style={{fontSize:13,color:'#6b7280',display:'block',marginBottom:5}}>{l}</label>
+              <input style={inp} type={t} value={form[f]||''} onChange={e=>setForm(x=>({...x,[f]:t==='number'?Number(e.target.value):e.target.value}))}/>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:10,marginTop:4}}>
+            <button style={{...btn('#5b21b6'),flex:1}} onClick={saveM}>שמור</button>
+            <button style={{...btn('#f3f4f6','#374151'),flex:1}} onClick={()=>setShowForm(false)}>ביטול</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── EXPENSES TAB ──────────────────────────────────────────────
+function ExpensesTab({expenses,setExpenses}){
+  const today=new Date().toISOString().slice(0,10);
+  const[form,setForm]=useState({date:today,amount:'',note:'לרב ברוך'});
+  const[showForm,setShowForm]=useState(false);
+
+  const save=()=>{
+    if(!form.amount)return alert('יש להזין סכום');
+    const list=[...expenses,{...form,amount:Number(form.amount),id:Date.now()}];
+    fbSet('expenses',list);
+    setForm({date:today,amount:'',note:'לרב ברוך'});
+    setShowForm(false);
+  };
+
+  const del=(id)=>{
+    if(!window.confirm('למחוק הוצאה זו?'))return;
+    fbSet('expenses',expenses.filter(e=>e.id!==id));
+  };
+
+  const total=expenses.reduce((s,e)=>s+Number(e.amount||0),0);
+
+  return(
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div style={{fontWeight:800,fontSize:16,color:'#3b0764'}}>תשלומים לרב ברוך</div>
+        <button style={btn('#5b21b6')} onClick={()=>setShowForm(true)}>+ הוסף</button>
+      </div>
+
+      <div style={{...card,background:'linear-gradient(135deg,#3b0764,#5b21b6)',color:'#fde68a',textAlign:'center',padding:16}}>
+        <div style={{fontSize:12,opacity:.8}}>סה"כ שולם לרב ברוך</div>
+        <div style={{fontSize:28,fontWeight:800,marginTop:4}}>₪{fmt(total)}</div>
+      </div>
+
+      {expenses.length===0&&<div style={{...card,textAlign:'center',color:'#7c3aed',padding:24}}>אין הוצאות רשומות</div>}
+      {[...expenses].sort((a,b)=>b.date>a.date?1:-1).map(e=>(
+        <div key={e.id} style={{...card,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontWeight:700,color:'#1e1b4b'}}>{fmt(e.amount)} ₪</div>
+            <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>{e.date} · {e.note}</div>
+          </div>
+          <button style={btn('#fee2e2','#dc2626')} onClick={()=>del(e.id)}>מחק</button>
+        </div>
+      ))}
+
+      {showForm&&(
+        <Modal title="הוסף תשלום לרב ברוך" onClose={()=>setShowForm(false)}>
+          {[['date','תאריך','date'],['amount','סכום (₪)','number'],['note','הערה','text']].map(([f,l,t])=>(
+            <div key={f} style={{marginBottom:12}}>
+              <label style={{fontSize:13,color:'#6b7280',display:'block',marginBottom:5}}>{l}</label>
+              <input style={inp} type={t} value={form[f]||''} onChange={e=>setForm(x=>({...x,[f]:e.target.value}))}/>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:10,marginTop:4}}>
+            <button style={{...btn('#5b21b6'),flex:1}} onClick={save}>שמור</button>
+            <button style={{...btn('#f3f4f6','#374151'),flex:1}} onClick={()=>setShowForm(false)}>ביטול</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── SUMMARY TAB ───────────────────────────────────────────────
+function SummaryTab({totalReceived,totalDebt,totalExpenses,balance,members,payments,allMonths,nowKey}){
+  return(
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+        {[
+          ['התקבל','₪'+fmt(totalReceived),'#dcfce7','#16a34a'],
+          ['חוב פתוח','₪'+fmt(totalDebt),'#fee2e2','#dc2626'],
+          ['שולם לרב','₪'+fmt(totalExpenses),'#ede9fe','#5b21b6'],
+          ['יתרה','₪'+fmt(balance),balance>=0?'#dcfce7':'#fee2e2',balance>=0?'#16a34a':'#dc2626'],
+        ].map(([l,v,bg,col])=>(
+          <div key={l} style={{...card,background:bg,textAlign:'center',padding:'14px 10px',marginBottom:0}}>
+            <div style={{fontSize:11,color:col,fontWeight:600,opacity:.8}}>{l}</div>
+            <div style={{fontSize:22,fontWeight:800,color:col,marginTop:4}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontWeight:800,fontSize:15,color:'#3b0764',margin:'16px 0 10px'}}>פירוט לפי חבר</div>
+      {members.map(mem=>{
+        const paid=allMonths.filter(mo=>mo<=nowKey&&payments[mo]?.[mem.id]?.paid);
+        const unpaid=allMonths.filter(mo=>mo<=nowKey&&!(payments[mo]?.[mem.id]?.paid));
+        const totalPaid=paid.reduce((s,mo)=>s+Number(payments[mo][mem.id].amount||0),0);
+        const debt=unpaid.length*(mem.amount||50);
+        return(
+          <div key={mem.id} style={{...card}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div style={{fontWeight:700,fontSize:15,color:'#1e1b4b'}}>{mem.name}</div>
+              <div style={{textAlign:'left'}}>
+                <span style={chip('#dcfce7','#16a34a')}>{fmt(totalPaid)} ₪ שולם</span>
+                {debt>0&&<span style={{...chip('#fee2e2','#dc2626'),marginRight:6}}>{fmt(debt)} ₪ חוב</span>}
+              </div>
+            </div>
+            <div style={{fontSize:12,color:'#7c3aed',marginTop:6}}>
+              {paid.length} חודשים שולמו · {unpaid.length} ממתינים
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</head>
+<body>
+<div id="root"></div>
+</body>
+</html>
