@@ -38,14 +38,14 @@ const db=firebase.database();
 const{useState,useEffect,useRef}=React;
 
 // ── CONSTANTS ────────────────────────────────────────────────
-const START_MONTH='2026-07'; // תמוז תשפ"ו
+const START_MONTH='2026-06'; // תמוז תשפ"ו (ר"ח תמוז = 16 יוני)
 const FB_PATH='keren-hashiurim';
 
 const fmt=n=>Number(n||0).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0});
 
 const toHebMonth=yyyymm=>{
   const[y,m]=yyyymm.split('-').map(Number);
-  const d=new Date(y,m-1,15);
+  const d=new Date(y,m-1,20); // יום 20 - נופל תמיד בחודש העברי השני של החודש הלועזי
   try{return new Intl.DateTimeFormat('he-u-ca-hebrew',{month:'long',year:'numeric'}).format(d);}
   catch{return yyyymm;}
 };
