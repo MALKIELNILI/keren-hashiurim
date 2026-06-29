@@ -203,8 +203,11 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
     setPayModal(null);
   };
 
-  const getUnpaid=(mem)=>allMonths.filter(mo=>mo<=nowKey&&!(payments[mo]?.[mem.id]?.paid));
+  // חוב מצטבר עד החודש המוצג (כולל עתידי)
+  const getUnpaid=(mem)=>monthsBetween(START_MONTH,selMonth).filter(mo=>!(payments[mo]?.[mem.id]?.paid));
   const getDebt=(mem)=>getUnpaid(mem).length*(mem.amount||50);
+  // לוואטסאפ — רק חודשים שכבר היו (לא עתידיים)
+  const getPastUnpaid=(mem)=>monthsBetween(START_MONTH,nowKey).filter(mo=>!(payments[mo]?.[mem.id]?.paid));
 
   const paidCount=members.filter(m=>monthPay[m.id]?.paid).length;
 
@@ -231,7 +234,8 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
         const paid=monthPay[mem.id]?.paid;
         const debt=getDebt(mem);
         const unpaidList=getUnpaid(mem);
-        const waMsg=buildWAMsg(mem,unpaidList);
+        const pastUnpaid=getPastUnpaid(mem);
+        const waMsg=buildWAMsg(mem,pastUnpaid);
         const phone=mem.phone?.replace(/\D/g,'');
         const waUrl=phone?`https://wa.me/972${phone.replace(/^0/,'')}?text=${encodeURIComponent(waMsg)}`:`https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
@@ -250,7 +254,7 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
                 </div>
               </div>
               <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
-                {unpaidList.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
+                {pastUnpaid.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
                 <button onClick={()=>togglePaid(mem)}
                   style={btn(paid?(isFuture?'#fef3c7':'#fee2e2'):'#dcfce7',paid?(isFuture?'#d97706':'#dc2626'):'#16a34a')}>
                   {paid?'✕ בטל':'✓ שילם'}
