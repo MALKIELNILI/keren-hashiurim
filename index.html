@@ -178,8 +178,10 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
   const[payModal,setPayModal]=useState(null);
   const[payAmount,setPayAmount]=useState('');
 
-  const canNext=selMonth<nowKey;
+  const maxFuture=(()=>{let[y,m]=nowKey.split('-').map(Number);m+=6;if(m>12){y++;m-=12;}return`${y}-${String(m).padStart(2,'0')}`;})();
+  const canNext=selMonth<maxFuture;
   const canPrev=selMonth>START_MONTH;
+  const isFuture=selMonth>nowKey;
 
   const monthPay=payments[selMonth]||{};
 
@@ -213,7 +215,10 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
           style={{...btn(canPrev?'#5b21b6':'#e5e7eb',canPrev?'#fff':'#aaa'),padding:'7px 14px'}}>→</button>
         <div style={{textAlign:'center'}}>
           <div style={{fontWeight:800,fontSize:17,color:'#3b0764'}}>{toHebMonth(selMonth)}</div>
-          <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>{paidCount}/{members.length} שילמו</div>
+          {isFuture
+            ?<div style={{fontSize:12,color:'#d97706',fontWeight:700,marginTop:2}}>⏩ חודש עתידי — תשלום מראש</div>
+            :<div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>{paidCount}/{members.length} שילמו</div>
+          }
         </div>
         <button onClick={()=>canNext&&setSelMonth(nextMonth(selMonth))}
           style={{...btn(canNext?'#5b21b6':'#e5e7eb',canNext?'#fff':'#aaa'),padding:'7px 14px'}}>←</button>
@@ -223,27 +228,30 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
       {members.length===0&&<div style={{...card,textAlign:'center',color:'#7c3aed',padding:30}}>אין חברים פעילים — הוסף בלשונית "חברים"</div>}
       {members.map(mem=>{
         const paid=monthPay[mem.id]?.paid;
-        const debt=getDebt(mem);
-        const unpaidList=getUnpaid(mem);
+        const debt=!isFuture?getDebt(mem):0;
+        const unpaidList=!isFuture?getUnpaid(mem):[];
         const waMsg=buildWAMsg(mem,unpaidList);
         const phone=mem.phone?.replace(/\D/g,'');
         const waUrl=phone?`https://wa.me/972${phone.replace(/^0/,'')}?text=${encodeURIComponent(waMsg)}`:`https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
+        const borderColor=paid?(isFuture?'#d97706':'#16a34a'):'#dc2626';
+
         return(
-          <div key={mem.id} style={{...card,borderRight:`5px solid ${paid?'#16a34a':'#dc2626'}`}}>
+          <div key={mem.id} style={{...card,borderRight:`5px solid ${borderColor}`}}>
             <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>{mem.name}</div>
                 <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>
                   {mem.amount||50} ₪/חודש
-                  {!paid&&debt>0&&<span style={{color:'#dc2626',fontWeight:700,marginRight:8}}>· חוב כולל: {fmt(debt)} ₪ ({unpaidList.length} חודשים)</span>}
-                  {paid&&<span style={{color:'#16a34a',fontWeight:700,marginRight:8}}>· שולם {fmt(monthPay[mem.id].amount)} ₪</span>}
+                  {!paid&&!isFuture&&debt>0&&<span style={{color:'#dc2626',fontWeight:700,marginRight:8}}>· חוב כולל: {fmt(debt)} ₪ ({unpaidList.length} חודשים)</span>}
+                  {paid&&!isFuture&&<span style={{color:'#16a34a',fontWeight:700,marginRight:8}}>· שולם {fmt(monthPay[mem.id].amount)} ₪</span>}
+                  {paid&&isFuture&&<span style={{color:'#d97706',fontWeight:700,marginRight:8}}>· שולם מראש {fmt(monthPay[mem.id].amount)} ₪</span>}
                 </div>
               </div>
               <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
-                {!paid&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
+                {!paid&&!isFuture&&unpaidList.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
                 <button onClick={()=>togglePaid(mem)}
-                  style={btn(paid?'#fee2e2':'#dcfce7',paid?'#dc2626':'#16a34a')}>
+                  style={btn(paid?(isFuture?'#fef3c7':'#fee2e2'):'#dcfce7',paid?(isFuture?'#d97706':'#dc2626'):'#16a34a')}>
                   {paid?'✕ בטל':'✓ שילם'}
                 </button>
               </div>
