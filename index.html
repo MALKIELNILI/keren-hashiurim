@@ -156,7 +156,7 @@ function App(){
             <div style={{color:'#fde68a',fontWeight:800,fontSize:18}}>קרן השיעורים</div>
           </div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            {[['main','📅 חודשי'],['members','👥 חברים'],['expenses','💸 הוצאות'],['summary','📊 סיכום']].map(([k,l])=>(
+            {[['main','📅 חודשי'],['members','👥 חברים'],['expenses','💸 הוצאות'],['summary','📊 סיכום'],['history','📜 היסטוריה']].map(([k,l])=>(
               <button key={k} style={tabS(k)} onClick={()=>setTab(k)}>{l}</button>
             ))}
           </div>
@@ -168,6 +168,7 @@ function App(){
         {tab==='members'&&<MembersTab members={members} setMembers={setMembers}/>}
         {tab==='expenses'&&<ExpensesTab expenses={expenses} setExpenses={setExpenses}/>}
         {tab==='summary'&&<SummaryTab totalReceived={totalReceived} totalDebt={totalDebt} totalExpenses={totalExpenses} balance={balance} members={activeMembers} payments={payments} allMonths={allMonths} nowKey={nowKey()}/>}
+        {tab==='history'&&<HistoryTab members={members} payments={payments}/>}
       </div>
     </div>
   );
@@ -449,6 +450,70 @@ function SummaryTab({totalReceived,totalDebt,totalExpenses,balance,members,payme
             </div>
             <div style={{fontSize:12,color:'#7c3aed',marginTop:6}}>
               {paid.length} חודשים שולמו · {unpaid.length} ממתינים
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── HISTORY TAB ───────────────────────────────────────────────
+function HistoryTab({members,payments}){
+  const[filterMember,setFilterMember]=useState('all');
+
+  // flatten all paid payments from ALL months (including future prepaid)
+  const allPaid=[];
+  Object.entries(payments).forEach(([month,mp])=>{
+    Object.entries(mp||{}).forEach(([memberId,pay])=>{
+      if(pay&&pay.paid){
+        const mem=members.find(m=>String(m.id)===String(memberId));
+        allPaid.push({month,memberId,name:mem?.name||'לא ידוע',amount:pay.amount||0,paidDate:pay.paidDate||'',key:`${month}-${memberId}`});
+      }
+    });
+  });
+
+  // sort by paidDate desc, then month desc
+  allPaid.sort((a,b)=>{
+    if(b.paidDate!==a.paidDate)return b.paidDate>a.paidDate?1:-1;
+    return b.month>a.month?1:-1;
+  });
+
+  const filtered=filterMember==='all'?allPaid:allPaid.filter(p=>p.memberId===filterMember);
+  const totalFiltered=filtered.reduce((s,p)=>s+Number(p.amount),0);
+
+  const activeMembers=members.filter(m=>m.active!==false);
+
+  return(
+    <div>
+      <div style={{...card,padding:'12px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span style={{fontSize:13,color:'#5b21b6',fontWeight:700}}>סינון:</span>
+        <select value={filterMember} onChange={e=>setFilterMember(e.target.value)}
+          style={{border:'1.5px solid #ddd6fe',borderRadius:8,padding:'6px 10px',fontSize:13,color:'#1e1b4b',background:'#fff',cursor:'pointer'}}>
+          <option value="all">כל החברים</option>
+          {members.map(m=><option key={m.id} value={String(m.id)}>{m.name}</option>)}
+        </select>
+        <div style={{marginRight:'auto',fontWeight:800,color:'#5b21b6',fontSize:14}}>
+          סה"כ: {fmt(totalFiltered)} ₪ ({filtered.length} תשלומים)
+        </div>
+      </div>
+
+      {filtered.length===0&&<div style={{...card,textAlign:'center',color:'#7c3aed',padding:28}}>אין תשלומים לתצוגה</div>}
+
+      {filtered.map(p=>{
+        const isFuture=p.month>nowKey();
+        return(
+          <div key={p.key} style={{...card,borderRight:`4px solid ${isFuture?'#d97706':'#5b21b6'}`,padding:'12px 14px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:'#1e1b4b'}}>{p.name}</div>
+                <div style={{fontSize:12,color:'#7c3aed',marginTop:3}}>
+                  {toHebMonth(p.month)}
+                  {isFuture&&<span style={{color:'#d97706',fontWeight:700,marginRight:6}}>⏩ מראש</span>}
+                  {p.paidDate&&<span style={{marginRight:6,color:'#9ca3af'}}>· {p.paidDate}</span>}
+                </div>
+              </div>
+              <div style={{fontWeight:800,color:'#16a34a',fontSize:18}}>+{fmt(p.amount)} ₪</div>
             </div>
           </div>
         );
