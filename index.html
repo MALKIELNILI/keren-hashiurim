@@ -178,6 +178,9 @@ function App(){
 function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
   const[payModal,setPayModal]=useState(null);
   const[payAmount,setPayAmount]=useState('');
+  const[editModal,setEditModal]=useState(null);
+  const[editAmount,setEditAmount]=useState('');
+  const[editDate,setEditDate]=useState('');
 
   const maxFuture=(()=>{let[y,m]=nowKey.split('-').map(Number);m+=6;if(m>12){y++;m-=12;}return`${y}-${String(m).padStart(2,'0')}`;})();
   const canNext=selMonth<maxFuture;
@@ -201,6 +204,18 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
     const today=new Date().toISOString().slice(0,10);
     fbSet(`payments/${selMonth}/${payModal.id}`,{paid:true,amount:Number(payAmount),paidDate:today});
     setPayModal(null);
+  };
+
+  const openEdit=(mem)=>{
+    const p=monthPay[mem.id];
+    setEditAmount(String(p?.amount||mem.amount||50));
+    setEditDate(p?.paidDate||new Date().toISOString().slice(0,10));
+    setEditModal(mem);
+  };
+  const saveEdit=()=>{
+    if(!editAmount||isNaN(editAmount))return;
+    fbSet(`payments/${selMonth}/${editModal.id}`,{paid:true,amount:Number(editAmount),paidDate:editDate});
+    setEditModal(null);
   };
 
   // חוב מצטבר עד החודש המוצג (כולל עתידי)
@@ -255,6 +270,7 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
               </div>
               <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
                 {pastUnpaid.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
+                {paid&&<button onClick={()=>openEdit(mem)} style={{...btn('#ede9fe','#5b21b6'),padding:'9px 11px'}}>✏️</button>}
                 <button onClick={()=>togglePaid(mem)}
                   style={btn(paid?(isFuture?'#fef3c7':'#fee2e2'):'#dcfce7',paid?(isFuture?'#d97706':'#dc2626'):'#16a34a')}>
                   {paid?'✕ בטל':'✓ שילם'}
@@ -275,6 +291,23 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
           <div style={{display:'flex',gap:10,marginTop:14}}>
             <button style={{...btn('#5b21b6'),flex:1}} onClick={savePay}>✓ אשר תשלום</button>
             <button style={{...btn('#f3f4f6','#374151'),flex:1}} onClick={()=>setPayModal(null)}>ביטול</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit modal */}
+      {editModal&&(
+        <Modal title={`עריכת תשלום — ${editModal.name}`} onClose={()=>setEditModal(null)}>
+          <div style={{marginBottom:12,color:'#5b21b6',fontSize:14}}>חודש: {toHebMonth(selMonth)}</div>
+          <label style={{fontSize:13,color:'#6b7280',display:'block',marginBottom:5}}>סכום (₪)</label>
+          <input style={{...inp,marginBottom:12}} type="number" value={editAmount}
+            onChange={e=>setEditAmount(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveEdit()}/>
+          <label style={{fontSize:13,color:'#6b7280',display:'block',marginBottom:5}}>תאריך תשלום</label>
+          <input style={{...inp,marginBottom:14}} type="date" value={editDate}
+            onChange={e=>setEditDate(e.target.value)}/>
+          <div style={{display:'flex',gap:10}}>
+            <button style={{...btn('#5b21b6'),flex:1}} onClick={saveEdit}>✓ שמור שינוי</button>
+            <button style={{...btn('#f3f4f6','#374151'),flex:1}} onClick={()=>setEditModal(null)}>ביטול</button>
           </div>
         </Modal>
       )}
@@ -437,23 +470,26 @@ function SummaryTab({totalReceived,totalDebt,totalExpenses,balance,members,payme
         ))}
       </div>
 
-      <div style={{fontWeight:800,fontSize:15,color:'#3b0764',margin:'16px 0 10px'}}>פירוט לפי חבר</div>
-      {members.map(mem=>{
-        const paid=allMonths.filter(mo=>mo<=nowKey&&payments[mo]?.[mem.id]?.paid);
-        const unpaid=allMonths.filter(mo=>mo<=nowKey&&!(payments[mo]?.[mem.id]?.paid));
-        const totalPaid=paid.reduce((s,mo)=>s+Number(payments[mo][mem.id].amount||0),0);
-        const debt=unpaid.length*(mem.amount||50);
+      <div style={{fontWeight:800,fontSize:15,color:'#3b0764',margin:'16px 0 10px'}}>סיכום לפי חבר</div>
+      {[...members].sort((a,b)=>{
+        const tA=allMonths.filter(mo=>mo<=nowKey&&payments[mo]?.[a.id]?.paid).reduce((s,mo)=>s+Number(payments[mo][a.id].amount||0),0);
+        const tB=allMonths.filter(mo=>mo<=nowKey&&payments[mo]?.[b.id]?.paid).reduce((s,mo)=>s+Number(payments[mo][b.id].amount||0),0);
+        return tB-tA;
+      }).map(mem=>{
+        const paidMonths=allMonths.filter(mo=>mo<=nowKey&&payments[mo]?.[mem.id]?.paid);
+        const unpaidMonths=allMonths.filter(mo=>mo<=nowKey&&!(payments[mo]?.[mem.id]?.paid));
+        const totalPaid=paidMonths.reduce((s,mo)=>s+Number(payments[mo][mem.id].amount||0),0);
+        const debt=unpaidMonths.length*(mem.amount||50);
         return(
-          <div key={mem.id} style={{...card}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div key={mem.id} style={{...card,borderRight:`4px solid ${debt>0?'#dc2626':'#16a34a'}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
               <div style={{fontWeight:700,fontSize:15,color:'#1e1b4b'}}>{mem.name}</div>
-              <div style={{textAlign:'left'}}>
-                <span style={chip('#dcfce7','#16a34a')}>{fmt(totalPaid)} ₪ שולם</span>
-                {debt>0&&<span style={{...chip('#fee2e2','#dc2626'),marginRight:6}}>{fmt(debt)} ₪ חוב</span>}
-              </div>
+              <div style={{fontWeight:800,fontSize:20,color:'#16a34a'}}>₪{fmt(totalPaid)}</div>
             </div>
-            <div style={{fontSize:12,color:'#7c3aed',marginTop:6}}>
-              {paid.length} חודשים שולמו · {unpaid.length} ממתינים
+            <div style={{display:'flex',gap:8,marginTop:7,flexWrap:'wrap'}}>
+              <span style={chip('#dcfce7','#16a34a')}>{paidMonths.length} חודשים שולמו</span>
+              {debt>0&&<span style={chip('#fee2e2','#dc2626')}>חוב: {fmt(debt)} ₪ ({unpaidMonths.length} חודשים)</span>}
+              {debt===0&&<span style={chip('#f0fdf4','#15803d')}>ללא חוב ✓</span>}
             </div>
           </div>
         );
