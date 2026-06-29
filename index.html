@@ -229,13 +229,13 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
       {members.length===0&&<div style={{...card,textAlign:'center',color:'#7c3aed',padding:30}}>אין חברים פעילים — הוסף בלשונית "חברים"</div>}
       {members.map(mem=>{
         const paid=monthPay[mem.id]?.paid;
-        const debt=!isFuture?getDebt(mem):0;
-        const unpaidList=!isFuture?getUnpaid(mem):[];
+        const debt=getDebt(mem);
+        const unpaidList=getUnpaid(mem);
         const waMsg=buildWAMsg(mem,unpaidList);
         const phone=mem.phone?.replace(/\D/g,'');
         const waUrl=phone?`https://wa.me/972${phone.replace(/^0/,'')}?text=${encodeURIComponent(waMsg)}`:`https://wa.me/?text=${encodeURIComponent(waMsg)}`;
 
-        const borderColor=paid?(isFuture?'#d97706':'#16a34a'):'#dc2626';
+        const borderColor=debt>0?'#dc2626':paid?(isFuture?'#d97706':'#16a34a'):'#16a34a';
 
         return(
           <div key={mem.id} style={{...card,borderRight:`5px solid ${borderColor}`}}>
@@ -244,13 +244,13 @@ function MainTab({members,payments,selMonth,setSelMonth,allMonths,nowKey}){
                 <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b'}}>{mem.name}</div>
                 <div style={{fontSize:12,color:'#7c3aed',marginTop:2}}>
                   {mem.amount||50} ₪/חודש
-                  {!paid&&!isFuture&&debt>0&&<span style={{color:'#dc2626',fontWeight:700,marginRight:8}}>· חוב כולל: {fmt(debt)} ₪ ({unpaidList.length} חודשים)</span>}
-                  {paid&&!isFuture&&<span style={{color:'#16a34a',fontWeight:700,marginRight:8}}>· שולם {fmt(monthPay[mem.id].amount)} ₪</span>}
+                  {debt>0&&<span style={{color:'#dc2626',fontWeight:700,marginRight:8}}>· חוב כולל: {fmt(debt)} ₪ ({unpaidList.length} חודשים)</span>}
+                  {paid&&!isFuture&&!debt&&<span style={{color:'#16a34a',fontWeight:700,marginRight:8}}>· שולם {fmt(monthPay[mem.id].amount)} ₪</span>}
                   {paid&&isFuture&&<span style={{color:'#d97706',fontWeight:700,marginRight:8}}>· שולם מראש {fmt(monthPay[mem.id].amount)} ₪</span>}
                 </div>
               </div>
               <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
-                {!paid&&!isFuture&&unpaidList.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
+                {unpaidList.length>0&&<a href={waUrl} target="_blank" style={{...btn('#25d366'),textDecoration:'none',fontSize:18,padding:'7px 10px'}}>📱</a>}
                 <button onClick={()=>togglePaid(mem)}
                   style={btn(paid?(isFuture?'#fef3c7':'#fee2e2'):'#dcfce7',paid?(isFuture?'#d97706':'#dc2626'):'#16a34a')}>
                   {paid?'✕ בטל':'✓ שילם'}
